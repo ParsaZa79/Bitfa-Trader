@@ -1,0 +1,94 @@
+services:
+  # PostgreSQL database
+  db:
+    image: postgres:17-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: bitfa_trader
+      POSTGRES_USER: bitfa
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bitfa -d bitfa_trader"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis for Celery
+  redis:
+    image: redis:7-alpine
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Django web (admin panel)
+  web:
+    build: .
+    command: uv run python manage.py runserver 0.0.0.0:8000
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://bitfa:${DB_PASSWORD:-changeme}@db:5432/bitfa_trader
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Signal bot (Telegram listener + trade executor)
+  bot:
+    build: .
+    command: uv run python manage.py runbot
+    restart: always
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://bitfa:${DB_PASSWORD:-changeme}@db:5432/bitfa_trader
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Celery worker (order sync, PnL tracking)
+  celery:
+    build: .
+    command: uv run celery -A config worker -l info -B
+    restart: always
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://bitfa:${DB_PASSWORD:-changeme}@db:5432/bitfa_trader
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Run migrations on startup
+  migrate:
+    build: .
+    command: uv run python manage.py migrate --noinput
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://bitfa:${DB_PASSWORD:-changeme}@db:5432/bitfa_trader
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
