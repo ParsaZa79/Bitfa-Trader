@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     "core",
     "signals",
     "trading",
+    "dashboard",
 ]
 
 MIDDLEWARE = [
