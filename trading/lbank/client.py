@@ -31,7 +31,8 @@ class LBankFuturesClient:
         self.secret_key = secret_key or settings.LBANK_SECRET_KEY
         self.base_url = (base_url or settings.LBANK_BASE_URL).rstrip("/")
         self.signature_method = signature_method or settings.LBANK_SIGNATURE_METHOD
-        self._http = httpx.AsyncClient(base_url=self.base_url, timeout=30)
+        transport = httpx.AsyncHTTPTransport(local_address="0.0.0.0")
+        self._http = httpx.AsyncClient(base_url=self.base_url, timeout=30, transport=transport)
 
     async def close(self):
         await self._http.aclose()
