@@ -1,5 +1,6 @@
 """Dashboard views."""
 
+import asyncio
 import json
 from decimal import Decimal
 
@@ -9,6 +10,7 @@ from django.db.models import Sum, Count, Q
 
 from signals.models import Signal, SignalUpdate
 from trading.models import Position, Order
+from trading.lbank.client import LBankFuturesClient
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -101,6 +103,43 @@ def pnl_chart_data(request):
         data.append(float(cumulative))
 
     return JsonResponse({"labels": labels, "data": data})
+
+
+def _run_async(coro):
+    """Run an async coroutine from sync context."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                return pool.submit(asyncio.run, coro).result(timeout=10)
+        return loop.run_until_complete(coro)
+    except RuntimeError:
+        return asyncio.run(coro)
+
+
+async def _fetch_exchange_data():
+    """Fetch positions, open orders and account from LBank."""
+    client = LBankFuturesClient()
+    try:
+        positions = await client.get_positions()
+        open_orders = await client.get_open_orders()
+        account = await client.get_account()
+        return {
+            "positions": positions.get("data", []) if isinstance(positions, dict) else [],
+            "open_orders": open_orders.get("data", []) if isinstance(open_orders, dict) else [],
+            "account": account.get("data", {}) if isinstance(account, dict) else {},
+        }
+    except Exception as e:
+        return {"positions": [], "open_orders": [], "account": {}, "error": str(e)}
+    finally:
+        await client.close()
+
+
+def exchange_data(request):
+    """API endpoint: live exchange data from LBank."""
+    data = _run_async(_fetch_exchange_data())
+    return JsonResponse(data)
 
 
 def _update_icon(update_type):

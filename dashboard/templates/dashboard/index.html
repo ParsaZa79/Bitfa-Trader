@@ -245,6 +245,38 @@
       </div>
     </section>
 
+    <!-- Exchange: Live Data from LBank -->
+    <section class="bg-card border border-border rounded-xl overflow-hidden fade-in" id="exchange-section">
+      <div class="px-5 py-4 border-b border-border flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Exchange — LBank Live</h2>
+          <span id="exchange-status" class="text-[10px] text-gray-600"></span>
+        </div>
+        <button onclick="loadExchangeData()" class="text-xs text-accent hover:text-accent/80 transition-colors">⟳ Refresh</button>
+      </div>
+
+      <!-- Account Summary -->
+      <div id="account-summary" class="px-5 py-3 border-b border-border hidden">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm"></div>
+      </div>
+
+      <!-- Exchange Positions -->
+      <div class="px-5 py-3 border-b border-border">
+        <h3 class="text-xs text-gray-500 uppercase tracking-wider mb-2">Open Positions (Exchange)</h3>
+        <div id="exchange-positions" class="overflow-x-auto">
+          <p class="text-gray-600 text-sm py-4 text-center">Loading...</p>
+        </div>
+      </div>
+
+      <!-- Exchange Open Orders -->
+      <div class="px-5 py-3">
+        <h3 class="text-xs text-gray-500 uppercase tracking-wider mb-2">Open Orders (Exchange)</h3>
+        <div id="exchange-orders" class="overflow-x-auto">
+          <p class="text-gray-600 text-sm py-4 text-center">Loading...</p>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <!-- Footer -->
@@ -318,6 +350,92 @@
           }
         });
       });
+  </script>
+
+  <script>
+    function loadExchangeData() {
+      document.getElementById('exchange-status').textContent = 'Fetching...';
+      fetch('/api/exchange/')
+        .then(r => r.json())
+        .then(d => {
+          document.getElementById('exchange-status').textContent = d.error ? '⚠ ' + d.error : '✓ Updated';
+
+          // Account
+          const acc = d.account;
+          if (acc && Object.keys(acc).length) {
+            const el = document.getElementById('account-summary');
+            el.classList.remove('hidden');
+            el.querySelector('div').innerHTML = `
+              <div><span class="text-gray-500 text-xs">Balance</span><p class="font-mono text-white">${acc.availableBalance || acc.balance || '-'} USDT</p></div>
+              <div><span class="text-gray-500 text-xs">Equity</span><p class="font-mono text-white">${acc.equity || acc.accountEquity || '-'}</p></div>
+              <div><span class="text-gray-500 text-xs">Margin Used</span><p class="font-mono text-yellow-400">${acc.usedMargin || acc.frozenBalance || '-'}</p></div>
+              <div><span class="text-gray-500 text-xs">Unrealized PnL</span><p class="font-mono ${parseFloat(acc.unrealizedPnl || acc.unPnl || 0) >= 0 ? 'text-win' : 'text-loss'}">${acc.unrealizedPnl || acc.unPnl || '0'}</p></div>
+            `;
+          }
+
+          // Positions
+          const posEl = document.getElementById('exchange-positions');
+          const positions = d.positions;
+          if (positions && positions.length > 0) {
+            let html = `<table class="w-full text-sm"><thead><tr class="text-xs text-gray-500 uppercase border-b border-border">
+              <th class="px-3 py-2 text-left">Symbol</th><th class="px-3 py-2 text-left">Side</th>
+              <th class="px-3 py-2 text-right">Size</th><th class="px-3 py-2 text-right">Entry</th>
+              <th class="px-3 py-2 text-right">Mark Price</th><th class="px-3 py-2 text-center">Leverage</th>
+              <th class="px-3 py-2 text-right">PnL</th></tr></thead><tbody class="divide-y divide-border">`;
+            positions.forEach(p => {
+              const pnl = parseFloat(p.unPnl || p.unrealizedPnl || 0);
+              const side = (p.side || p.positionSide || '').toLowerCase();
+              html += `<tr class="hover:bg-white/[0.02]">
+                <td class="px-3 py-2 font-medium text-white">${p.symbol || p.contractId || '-'}</td>
+                <td class="px-3 py-2"><span class="px-2 py-0.5 rounded text-xs font-semibold ${side.includes('long') || side.includes('buy') ? 'bg-win/10 text-win' : 'bg-loss/10 text-loss'}">${side.toUpperCase()}</span></td>
+                <td class="px-3 py-2 text-right font-mono text-gray-300">${p.positionSize || p.volume || p.amount || '-'}</td>
+                <td class="px-3 py-2 text-right font-mono text-gray-300">${p.avgPrice || p.entryPrice || '-'}</td>
+                <td class="px-3 py-2 text-right font-mono text-gray-400">${p.markPrice || p.lastPrice || '-'}</td>
+                <td class="px-3 py-2 text-center text-gray-400">${p.leverage || '-'}×</td>
+                <td class="px-3 py-2 text-right font-mono ${pnl >= 0 ? 'text-win' : 'text-loss'}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}</td>
+              </tr>`;
+            });
+            html += '</tbody></table>';
+            posEl.innerHTML = html;
+          } else {
+            posEl.innerHTML = '<p class="text-gray-600 text-sm py-4 text-center">No open positions on exchange</p>';
+          }
+
+          // Orders
+          const ordEl = document.getElementById('exchange-orders');
+          const orders = d.open_orders;
+          if (orders && orders.length > 0) {
+            let html = `<table class="w-full text-sm"><thead><tr class="text-xs text-gray-500 uppercase border-b border-border">
+              <th class="px-3 py-2 text-left">Symbol</th><th class="px-3 py-2 text-left">Side</th>
+              <th class="px-3 py-2 text-left">Type</th><th class="px-3 py-2 text-right">Price</th>
+              <th class="px-3 py-2 text-right">Qty</th><th class="px-3 py-2 text-right">Filled</th>
+              <th class="px-3 py-2 text-center">Status</th></tr></thead><tbody class="divide-y divide-border">`;
+            orders.forEach(o => {
+              const side = (o.side || o.direction || '').toLowerCase();
+              html += `<tr class="hover:bg-white/[0.02]">
+                <td class="px-3 py-2 font-medium text-white">${o.symbol || o.contractId || '-'}</td>
+                <td class="px-3 py-2"><span class="px-2 py-0.5 rounded text-xs font-semibold ${side.includes('buy') || side.includes('long') ? 'bg-win/10 text-win' : 'bg-loss/10 text-loss'}">${side.toUpperCase()}</span></td>
+                <td class="px-3 py-2 text-gray-400 text-xs">${o.type || o.orderType || '-'}</td>
+                <td class="px-3 py-2 text-right font-mono text-gray-300">${o.price || '-'}</td>
+                <td class="px-3 py-2 text-right font-mono text-gray-300">${o.origQty || o.volume || o.amount || '-'}</td>
+                <td class="px-3 py-2 text-right font-mono text-gray-400">${o.executedQty || o.filledVolume || '0'}</td>
+                <td class="px-3 py-2 text-center"><span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-yellow-500/10 text-yellow-400">${o.status || 'OPEN'}</span></td>
+              </tr>`;
+            });
+            html += '</tbody></table>';
+            ordEl.innerHTML = html;
+          } else {
+            ordEl.innerHTML = '<p class="text-gray-600 text-sm py-4 text-center">No open orders on exchange</p>';
+          }
+        })
+        .catch(err => {
+          document.getElementById('exchange-status').textContent = '⚠ Error: ' + err.message;
+        });
+    }
+    // Auto-load on page load
+    loadExchangeData();
+    // Auto-refresh every 30s
+    setInterval(loadExchangeData, 30000);
   </script>
 </body>
 </html>
