@@ -39,7 +39,7 @@ class TelegramListener:
     async def start(self):
         """Start the Telegram client and begin listening."""
         self.client = TelegramClient(
-            "bitfa_session",
+            "/app/bitfa_session",
             self.api_id,
             self.api_hash,
         )
